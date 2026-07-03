@@ -1,145 +1,117 @@
 const nodemailer = require("nodemailer");
+
 const { MAIL_USER, MAIL_PASS } = require("../config/env");
 
-const mailTransporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-        user: MAIL_USER,
-        pass: MAIL_PASS
+function createTransporter() {
+    if (!MAIL_USER || !MAIL_PASS) {
+        throw new Error("Thiếu MAIL_USER hoặc MAIL_PASS trong Environment Variables.");
     }
-});
 
-function escapeHtml(text) {
-    return String(text || "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
+    return nodemailer.createTransport({
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true,
+        auth: {
+            user: MAIL_USER,
+            pass: MAIL_PASS
+        },
+        connectionTimeout: 30000,
+        greetingTimeout: 30000,
+        socketTimeout: 30000
+    });
 }
 
-async function sendStockEmail(alert) {
-    if (!alert.email) return;
-
-    if (
-        !MAIL_USER ||
-        MAIL_USER.includes("EMAIL_CUA_BAN") ||
-        !MAIL_PASS ||
-        MAIL_PASS.includes("APP_PASSWORD")
-    ) {
-        throw new Error("Chưa cấu hình MAIL_USER / MAIL_PASS trong config/env.js.");
-    }
-
-    const productName = alert.productName || alert.productCode || "Sản phẩm Zara";
-    const productCode = alert.productCode || "";
+function buildStockEmailHtml(alert) {
+    const productName = alert.productName || "Sản phẩm Zara";
+    const productCode = alert.productCode || alert.productId || "";
+    const targetSize = alert.targetSize || alert.size || "";
     const productUrl = alert.productUrl || "";
-    const productImage = alert.productImage || "";
-    const targetSize = alert.targetSize || "";
+    const productImage = alert.productImage || alert.imageUrl || alert.image || "";
 
-    const subject = targetSize
-        ? `Zara back size ${targetSize}: ${productName}`
-        : `Zara có hàng lại: ${productName}`;
+    return `
+        <div style="font-family: Arial, sans-serif; color: #222; line-height: 1.6;">
+            <h2 style="color: #9b4a60;">Zara back size rồi</h2>
 
-    const productImageHtml = productImage
-        ? `
-            <div style="margin: 18px 0;">
-                <img
-                    src="${escapeHtml(productImage)}"
-                    alt="${escapeHtml(productName)}"
-                    style="
-                        width: 260px;
-                        max-width: 100%;
-                        border-radius: 12px;
-                        border: 1px solid #eee;
-                        display: block;
-                        background: #f7f7f7;
-                    "
-                >
-            </div>
-        `
-        : `
-            <p style="color:#999;">
-                Không có ảnh sản phẩm trong dữ liệu canh back.
-            </p>
-        `;
-
-    const html = `
-        <div style="
-            font-family: Arial, sans-serif;
-            color: #222;
-            line-height: 1.6;
-            max-width: 560px;
-        ">
-            <h2 style="
-                color: #9b4a60;
-                margin-bottom: 10px;
-            ">
-                Sản phẩm Zara đã có hàng lại
-            </h2>
-
-            ${productImageHtml}
-
-            <p>
-                <b>Tên sản phẩm:</b>
-                ${escapeHtml(productName)}
-            </p>
-
-            <p>
-                <b>Mã sản phẩm:</b>
-                ${escapeHtml(productCode)}
-            </p>
+            <p>Sản phẩm bạn đang canh đã có dấu hiệu back lại size.</p>
 
             ${
-                targetSize
+                productImage
+                    ? `
+                        <div style="margin: 16px 0;">
+                            <img
+                                src="${productImage}"
+                                alt="${productName}"
+                                style="max-width: 260px; border-radius: 12px; display: block;"
+                            >
+                        </div>
+                    `
+                    : ""
+            }
+
+            <p><b>Sản phẩm:</b> ${productName}</p>
+            <p><b>Mã sản phẩm:</b> ${productCode}</p>
+            <p><b>Size đang canh:</b> ${targetSize}</p>
+
+            ${
+                productUrl
                     ? `
                         <p>
-                            <b>Size đang canh:</b>
-                            ${escapeHtml(targetSize)}
+                            <a
+                                href="${productUrl}"
+                                target="_blank"
+                                style="
+                                    display: inline-block;
+                                    padding: 12px 18px;
+                                    background: #9b4a60;
+                                    color: #fff;
+                                    text-decoration: none;
+                                    border-radius: 10px;
+                                    font-weight: bold;
+                                "
+                            >
+                                Mở sản phẩm Zara
+                            </a>
                         </p>
                     `
                     : ""
             }
 
-            <p style="margin-top: 18px;">
-                <a
-                    href="${escapeHtml(productUrl)}"
-                    target="_blank"
-                    style="
-                        display: inline-block;
-                        background: #111;
-                        color: #fff;
-                        padding: 12px 18px;
-                        border-radius: 8px;
-                        text-decoration: none;
-                        font-weight: bold;
-                    "
-                >
-                    Mở sản phẩm Zara
-                </a>
-            </p>
-
-            <p style="color: #777; font-size: 13px; margin-top: 18px;">
-                Link trực tiếp:
-                <br>
-                <a href="${escapeHtml(productUrl)}" target="_blank">
-                    ${escapeHtml(productUrl)}
-                </a>
-            </p>
-
-            <p style="color: #999; font-size: 12px; margin-top: 24px;">
-                Email này được gửi tự động từ hệ thống canh back Zara.
+            <p style="margin-top: 20px; color: #666;">
+                Nếu bạn đã mua được rồi, hãy vào trang canh back để bấm dừng canh.
             </p>
         </div>
     `;
+}
 
-    await mailTransporter.sendMail({
-        from: `"Zara Stock Alert" <${MAIL_USER}>`,
-        to: alert.email,
-        subject,
-        html
-    });
+async function sendStockEmail(alert) {
+    const email = alert.email;
+
+    if (!email) {
+        throw new Error("Không có email nhận thông báo.");
+    }
+
+    const productName = alert.productName || "Sản phẩm Zara";
+    const targetSize = alert.targetSize || alert.size || "";
+
+    console.log("[mail] Bắt đầu gửi mail đến:", email);
+    console.log("[mail] MAIL_USER:", MAIL_USER);
+
+    const transporter = createTransporter();
+
+    const mailOptions = {
+        from: `"QL Zara" <${MAIL_USER}>`,
+        to: email,
+        subject: `Zara back size ${targetSize}: ${productName}`,
+        html: buildStockEmailHtml(alert)
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+
+    console.log("[mail] Gửi mail thành công:", info.messageId);
+
+    return info;
 }
 
 module.exports = {
-    sendStockEmail,
-    escapeHtml
+    sendStockEmail
 };
