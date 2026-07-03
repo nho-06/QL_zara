@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Danh mục canh back size</title>
+    <link rel="stylesheet" href="style.css">
+
+    <style>
+        .toast-message {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            z-index: 9999;
+            background: #9b4a60;
+            color: #fff;
+            padding: 12px 18px;
+            border-radius: 12px;
+            font-weight: 600;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: 0.25s ease;
+            pointer-events: none;
+        }
+
+        .toast-message.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .toast-message.error {
+            background: #b3261e;
+        }
+
+        .delete-confirm-info {
+            margin: 14px 0;
+            padding: 14px;
+            border-radius: 12px;
+            background: #fff2f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .delete-confirm-info b {
+            color: #9b4a60;
+        }
+
+        .danger-btn {
+            background: #b3261e !important;
+            color: #fff !important;
+        }
+    </style>
+</head>
+<body>
+
+<div id="toastMessage" class="toast-message"></div>
+
+<div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="main-content">
+        <h1>Danh mục canh back size</h1>
+
+        <div class="filter-row">
+            <button type="button" class="pink-btn" onclick="loadStockAlerts()">Làm mới</button>
+            <button type="button" class="pink-btn" onclick="window.location.href='index.html'">Về trang chủ</button>
+        </div>
+
+        <div class="page-note">
+            Danh sách này hiển thị các sản phẩm đang canh size.
+            Khi size back lại, hệ thống gửi mail.
+            Nếu size hết lại, hệ thống tự bật canh lại cho vòng sau.
+            Khi khách mua được rồi thì bấm <b>Đã mua được / Dừng canh</b>.
+            Nếu không muốn lưu món đó nữa thì bấm <b>Xóa khỏi canh back</b>.
+        </div>
+
+        <div id="alertList" class="product-card-list"></div>
+    </main>
+</div>
+
+<div id="deleteModal" class="modal hidden">
+    <div class="modal-content">
+        <button type="button" class="modal-close-btn" onclick="closeDeleteModal()">×</button>
+
+        <h2>Xóa khỏi canh back?</h2>
+
+        <div class="delete-confirm-info">
+            <p><b>Sản phẩm:</b> <span id="deleteProductName"></span></p>
+            <p><b>Mã sản phẩm:</b> <span id="deleteProductCode"></span></p>
+            <p><b>Size đang canh:</b> <span id="deleteTargetSize"></span></p>
+            <p><b>Email:</b> <span id="deleteEmail"></span></p>
+        </div>
+
+        <p class="soldout-text">
+            Sau khi xóa, sản phẩm này sẽ không còn trong danh sách canh back và server sẽ không gửi mail nữa.
+        </p>
+
+        <div class="modal-actions">
+            <button type="button" class="danger-btn" onclick="confirmDeleteWatching()">Xóa</button>
+            <button type="button" class="cancel-btn" onclick="closeDeleteModal()">Hủy</button>
+        </div>
+    </div>
+</div>
+
+<script src="api-config.js"></script>
+<script type="module">
+const API_BASE = window.API_BASE || "http://localhost:3000";
+
+import { safe } from "./utils.js";
+
+let deleteAlertId = "";
+
+window.loadStockAlerts = loadStockAlerts;
+window.stopWatching = stopWatching;
+window.rewatch = rewatch;
+window.openDeleteModal = openDeleteModal;
+window.closeDeleteModal = closeDeleteModal;
+window.confirmDeleteWatching = confirmDeleteWatching;
+
+function showToast(message, type = "success") {
+    const toast = document.getElementById("toastMessage");
+
+    toast.innerText = message;
+    toast.classList.remove("error");
+    toast.classList.add("show");
+
+    if (type === "error") {
+        toast.classList.add("error");
+    }
+
+    setTimeout(() => {
+        toast.classList.remove("show");
+    }, 2200);
+}
+
+function getStatusText(status) {
+    if (status === "watching") return "Đang canh";
+    if (status === "notified_waiting_soldout") return "Đã gửi mail, chờ hết size để canh lại";
+    if (status === "stopped") return "Đã mua được / Đã dừng";
+    if (status === "notified") return "Đã gửi mail theo code cũ";
+    return status || "Không rõ";
+}
+
+function getStatusClass(status) {
+    if (status === "watching") return "available-text";
+    if (status === "notified_waiting_soldout") return "soldout-text";
+    if (status === "stopped") return "muted-size-text";
+    return "page-note";
+}
+
+function getProductImage(alert) {
+    return alert.productImage || alert.imageUrl || alert.image || alert.modelImage || "";
+}
+
+async function callServer(url, body) {
+    const response = await fetch(url, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+    });
+
+    const result = await response.json();
+
+    if (!result.success) {
+        throw new Error(result.message || "Không thực hiện được.");
+    }
+
+    return result;
+}
+
+async function stopWatching(id) {
+    try {
+        await callServer(`${API_BASE}/stock-alerts/stop`, { id });
+        showToast("Đã dừng canh back.");
+        loadStockAlerts();
+    } catch (error) {
+        showToast(error.message, "error");
+    }
+}
+
+async function rewatch(id) {
+    try {
+        await callServer(`${API_BASE}/stock-alerts/rewatch`, { id });
+        showToast("Đã bật canh lại.");
+        loadStockAlerts();
+    } catch (error) {
+        showToast(error.message, "error");
+    }
+}
+
+function openDeleteModal(id, productName, productCode, targetSize, email) {
+    deleteAlertId = id;
+
+    document.getElementById("deleteProductName").innerText = productName || "Không có tên";
+    document.getElementById("deleteProductCode").innerText = productCode || "";
+    document.getElementById("deleteTargetSize").innerText = targetSize || "";
+    document.getElementById("deleteEmail").innerText = email || "";
+
+    document.getElementById("deleteModal").classList.remove("hidden");
+}
+
+function closeDeleteModal() {
+    deleteAlertId = "";
+    document.getElementById("deleteModal").classList.add("hidden");
+}
+
+async function confirmDeleteWatching() {
+    if (!deleteAlertId) {
+        showToast("Không tìm thấy sản phẩm cần xóa.", "error");
+        return;
+    }
+
+    try {
+        await callServer(`${API_BASE}/stock-alerts/delete`, {
+            id: deleteAlertId
+        });
+
+        closeDeleteModal();
+        showToast("Đã xóa khỏi danh sách canh back.");
+        loadStockAlerts();
+    } catch (error) {
+        showToast(error.message, "error");
+    }
+}
+
+async function loadStockAlerts() {
+    const box = document.getElementById("alertList");
+
+    box.innerHTML = `<div class="page-note">Đang tải danh sách canh back...</div>`;
+
+    try {
+        const response = await fetch(`${API_BASE}/stock-alerts/list`);
+        const result = await response.json();
+
+        if (!result.success) {
+            box.innerHTML = `
+                <div class="page-note error-note">
+                    ${safe(result.message || "Không tải được danh sách.")}
+                </div>
+            `;
+            return;
+        }
+
+        const alerts = result.data || [];
+
+        if (alerts.length === 0) {
+            box.innerHTML = `
+                <div class="page-note">
+                    Chưa có sản phẩm nào đang canh back size.
+                </div>
+            `;
+            return;
+        }
+
+        box.innerHTML = alerts.map(alert => {
+            const imageUrl = getProductImage(alert);
+            const statusText = getStatusText(alert.status);
+            const statusClass = getStatusClass(alert.status);
+            const notifyCount = Number(alert.notifyCount || 0);
+            const availableSizes = alert.lastAvailableSizes || [];
+            const soldOutSizes = alert.lastSoldOutSizes || [];
+
+            const id = safe(alert.id || "");
+            const productName = safe(alert.productName || "Không có tên");
+            const productCode = safe(alert.productCode || "");
+            const targetSize = safe(alert.targetSize || "");
+            const email = safe(alert.email || "");
+
+            return `
+                <div class="product-card ${alert.status === "stopped" ? "out-of-stock-card" : ""}">
+                    <div class="product-image-wrap">
+                        ${
+                            imageUrl
+                                ? `<img src="${safe(imageUrl)}" alt="${productName}">`
+                                : `<div class="no-image">Không có ảnh</div>`
+                        }
+                    </div>
+
+                    <div class="product-info">
+                        <h3>${productName}</h3>
+
+                        <p><b>Mã sản phẩm:</b> ${productCode}</p>
+                        <p><b>Size đang canh:</b> ${targetSize}</p>
+                        <p><b>Email nhận báo:</b> ${email}</p>
+
+                        <p class="${statusClass}">
+                            <b>Trạng thái:</b> ${safe(statusText)}
+                        </p>
+
+                        <p><b>Số lần đã gửi mail:</b> ${notifyCount}</p>
+
+                        ${
+                            availableSizes.length
+                                ? `
+                                    <p class="available-text">
+                                        <b>Lần check gần nhất còn size:</b>
+                                        ${availableSizes.map(size => safe(size)).join(", ")}
+                                    </p>
+                                `
+                                : ""
+                        }
+
+                        ${
+                            soldOutSizes.length
+                                ? `
+                                    <p class="soldout-text">
+                                        <b>Lần check gần nhất hết size:</b>
+                                        ${soldOutSizes.map(size => safe(size)).join(", ")}
+                                    </p>
+                                `
+                                : ""
+                        }
+
+                        <p><b>Lần check gần nhất:</b> ${safe(alert.lastCheckedAt || "Chưa check")}</p>
+                        <p><b>Lần gửi mail gần nhất:</b> ${safe(alert.lastNotifiedAt || alert.notifiedAt || "Chưa gửi")}</p>
+
+                        <div class="card-actions">
+                            ${
+                                alert.productUrl
+                                    ? `
+                                        <button type="button" onclick="window.open('${safe(alert.productUrl)}', '_blank')">
+                                            Mở Zara
+                                        </button>
+                                    `
+                                    : ""
+                            }
+
+                            ${
+                                alert.status !== "stopped"
+                                    ? `
+                                        <button type="button" class="cancel-btn" onclick="stopWatching('${id}')">
+                                            Đã mua được / Dừng canh
+                                        </button>
+                                    `
+                                    : `
+                                        <button type="button" class="watch-btn" onclick="rewatch('${id}')">
+                                            Canh lại
+                                        </button>
+                                    `
+                            }
+
+                            <button
+                                type="button"
+                                class="danger-btn"
+                                onclick="openDeleteModal('${id}', '${productName}', '${productCode}', '${targetSize}', '${email}')"
+                            >
+                                Xóa khỏi canh back
+                            </button>
+
+                            ${
+                                alert.status === "notified" || alert.status === "notified_waiting_soldout"
+                                    ? `
+                                        <button type="button" class="watch-btn" onclick="rewatch('${id}')">
+                                            Canh lại ngay
+                                        </button>
+                                    `
+                                    : ""
+                            }
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join("");
+    } catch (error) {
+        box.innerHTML = `
+            <div class="page-note error-note">
+                Không gọi được server. Hãy chạy <b>node server.js</b> trước.
+            </div>
+        `;
+    }
+}
+
+loadStockAlerts();
+</script>
+
+<script src="script.js"></script>
+</body>
+</html>

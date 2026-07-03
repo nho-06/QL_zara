@@ -1,0 +1,5 @@
+node_modules
+.env
+zara-scraper/node_modules
+zara-scraper/.env
+zara-scraper/zara_product.json
