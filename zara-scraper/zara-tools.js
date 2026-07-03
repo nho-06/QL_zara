@@ -43,12 +43,14 @@ function cleanSizeList(sizes) {
 
 async function createBrowser() {
     return await chromium.launch({
-        headless: false,
+        headless: true,
         args: [
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage"
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--single-process"
         ]
     });
 }
