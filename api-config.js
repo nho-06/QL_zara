@@ -1,1 +1,1 @@
-window.API_BASE = "http://localhost:3000";
+window.API_BASE = "https://ql-zara-server.onrender.com";
