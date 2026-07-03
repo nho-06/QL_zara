@@ -4,6 +4,7 @@ const cors = require("cors");
 const { PORT } = require("./config/env");
 const zaraRoutes = require("./routes/zaraRoutes");
 const stockAlertRoutes = require("./routes/stockAlertRoutes");
+const testMailRoutes = require("./routes/testMailRoutes");
 const { checkStockAlerts } = require("./services/stockAlertService");
 
 const app = express();
@@ -26,6 +27,7 @@ app.get("/health", (req, res) => {
 
 app.use("/", zaraRoutes);
 app.use("/stock-alerts", stockAlertRoutes);
+app.use("/test-mail", testMailRoutes);
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
